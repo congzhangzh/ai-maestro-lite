@@ -1,0 +1,32 @@
+{
+  "clientVersion": "0.1.4",
+  "downloadBaseUrl": "https://downloads.corp.internal/ai-maestro-lite",
+  "announcements": [
+    "所有更新都需要人工确认，不会静默安装。",
+    "GitHub 浏览器会记录每一个网络请求 URL 并同步到中台。",
+    "Claude Code 模型既支持推荐项，也支持用户手动输入覆盖。"
+  ],
+  "clientUpdate": {
+    "hasUpdate": true,
+    "latestVersion": "0.1.4",
+    "publishedAt": "2026-04-23T12:00:00.000Z",
+    "releaseNotes": [
+      "新增 5 个固定场景工作台。",
+      "新增 VS Code 内部代理模板。"
+    ],
+    "downloadUrl": "https://downloads.corp.internal/ai-maestro-lite/client-0.1.4",
+    "mandatory": false
+  },
+  "sceneUpdates": {
+    "vscode-dev": {
+      "latestVersion": "2026.04.24",
+      "releaseNotes": [
+        "VS Code 内部代理模板已更新。",
+        "变更会在用户确认后才应用。"
+      ]
+    },
+    "github-browser": {
+      "downloadUrl": "https://downloads.corp.internal/ai-maestro-lite/scenes/github-browser"
+    }
+  }
+}

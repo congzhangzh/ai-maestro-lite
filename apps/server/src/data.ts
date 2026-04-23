@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import type {
   BootstrapResponse,
   BrowserPolicy,
@@ -9,12 +11,31 @@ import type {
 } from "@ai-maestro-lite/shared";
 import { DEFAULT_SCENES, GITHUB_ALLOWED_HOSTS } from "@ai-maestro-lite/shared";
 
-export const CLIENT_VERSION = "0.1.4";
+type UpdateOverride = Partial<Omit<UpdateCheckResponse, "target" | "sceneId">>;
 
-export const announcements = [
+type RuntimeConfig = {
+  clientVersion?: string;
+  announcements?: string[];
+  downloadBaseUrl?: string;
+  clientUpdate?: UpdateOverride;
+  sceneUpdates?: Partial<Record<SceneId, UpdateOverride>>;
+};
+
+const DEFAULT_CLIENT_VERSION = "0.1.4";
+const DEFAULT_DOWNLOAD_BASE_URL = "https://downloads.corp.internal/ai-maestro-lite";
+const DEFAULT_PUBLISHED_AT = "2026-04-23T12:00:00.000Z";
+
+const DEFAULT_ANNOUNCEMENTS = [
   "所有更新都需要人工确认，不会静默安装。",
   "GitHub 浏览器会记录每一个网络请求 URL 并同步到中台。",
   "Claude Code 模型既支持推荐项，也支持用户手动输入覆盖。"
+];
+
+const DEFAULT_CLIENT_RELEASE_NOTES = [
+  "新增 5 个固定场景工作台。",
+  "新增 VS Code 内部代理模板。",
+  "新增 Claude 模型切换与自定义模型输入。",
+  "新增 GitHub 浏览器 URL 审计与受控访问。"
 ];
 
 export const sceneMap = DEFAULT_SCENES.reduce<Record<SceneId, SceneDetail>>((acc, scene) => {
@@ -54,11 +75,49 @@ export const mockGatewayModels = new Set([
   "claude-compatible-router"
 ]);
 
-export function getBootstrap(): BootstrapResponse {
+function getRuntimeConfigPath() {
+  return process.env.AI_MAESTRO_RUNTIME_CONFIG ?? path.resolve(process.cwd(), "data", "runtime-config.json");
+}
+
+function readRuntimeConfig(): RuntimeConfig {
+  const filePath = getRuntimeConfigPath();
+  if (!existsSync(filePath)) {
+    return {};
+  }
+
+  try {
+    const raw = readFileSync(filePath, "utf8");
+    return JSON.parse(raw) as RuntimeConfig;
+  } catch {
+    return {};
+  }
+}
+
+function getClientVersion(config: RuntimeConfig) {
+  return config.clientVersion ?? DEFAULT_CLIENT_VERSION;
+}
+
+function getDownloadBaseUrl(config: RuntimeConfig) {
+  return (config.downloadBaseUrl ?? DEFAULT_DOWNLOAD_BASE_URL).replace(/\/+$/, "");
+}
+
+function mergeUpdate(
+  defaults: Omit<UpdateCheckResponse, "target" | "sceneId">,
+  overrides?: UpdateOverride
+): Omit<UpdateCheckResponse, "target" | "sceneId"> {
   return {
-    clientVersion: CLIENT_VERSION,
+    ...defaults,
+    ...overrides,
+    releaseNotes: overrides?.releaseNotes ?? defaults.releaseNotes
+  };
+}
+
+export function getBootstrap(): BootstrapResponse {
+  const config = readRuntimeConfig();
+  return {
+    clientVersion: getClientVersion(config),
     releaseChannel: "stable",
-    announcements,
+    announcements: config.announcements ?? DEFAULT_ANNOUNCEMENTS,
     scenes: DEFAULT_SCENES.map(({ faqs: _faqs, overview: _overview, actions: _actions, subTargets: _subTargets, ...summary }) => summary)
   };
 }
@@ -68,34 +127,49 @@ export function getScene(sceneId: SceneId): SceneDetail | undefined {
 }
 
 export function getUpdate(target: "client" | "scene", sceneId?: SceneId): UpdateCheckResponse {
+  const config = readRuntimeConfig();
+  const clientVersion = getClientVersion(config);
+  const downloadBaseUrl = getDownloadBaseUrl(config);
+
   if (target === "client") {
+    const merged = mergeUpdate(
+      {
+        hasUpdate: true,
+        latestVersion: clientVersion,
+        publishedAt: DEFAULT_PUBLISHED_AT,
+        releaseNotes: DEFAULT_CLIENT_RELEASE_NOTES,
+        downloadUrl: `${downloadBaseUrl}/client-${clientVersion}`,
+        mandatory: false
+      },
+      config.clientUpdate
+    );
+
     return {
       target,
-      hasUpdate: true,
-      latestVersion: CLIENT_VERSION,
-      publishedAt: "2026-04-23T12:00:00.000Z",
-      releaseNotes: [
-        "新增 5 个固定场景工作台。",
-        "新增 VS Code 内部代理模板。",
-        "新增 Claude 模型切换与自定义模型输入。",
-        "新增 GitHub 浏览器 URL 审计与受控访问。"
-      ],
-      downloadUrl: "https://downloads.corp.internal/ai-maestro-lite/client-0.1.4",
-      mandatory: false
+      ...merged
     };
   }
 
+  const resolvedSceneId = sceneId ?? "vscode-dev";
+  const sceneTitle = sceneMap[resolvedSceneId]?.title ?? "场景";
+  const merged = mergeUpdate(
+    {
+      hasUpdate: true,
+      latestVersion: "2026.04.23",
+      publishedAt: DEFAULT_PUBLISHED_AT,
+      releaseNotes: [
+        `${sceneTitle} 的规则包已更新。`,
+        "变更会在用户确认后才应用。"
+      ],
+      downloadUrl: `${downloadBaseUrl}/scenes/${resolvedSceneId}`,
+      mandatory: false
+    },
+    config.sceneUpdates?.[resolvedSceneId]
+  );
+
   return {
     target,
-    sceneId,
-    hasUpdate: true,
-    latestVersion: "2026.04.23",
-    publishedAt: "2026-04-23T12:00:00.000Z",
-    releaseNotes: [
-      `${sceneMap[sceneId ?? "vscode-dev"]?.title ?? "场景"} 的规则包已更新。`,
-      "变更会在用户确认后才应用。"
-    ],
-    downloadUrl: `https://downloads.corp.internal/ai-maestro-lite/scenes/${sceneId ?? "vscode-dev"}`,
-    mandatory: false
+    sceneId: resolvedSceneId,
+    ...merged
   };
 }
