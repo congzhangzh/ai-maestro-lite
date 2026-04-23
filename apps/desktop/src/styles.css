@@ -1,0 +1,148 @@
+:root {
+  color-scheme: dark;
+  background:
+    radial-gradient(circle at top left, rgba(47, 143, 131, 0.3), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(211, 122, 53, 0.16), transparent 24%),
+    #0f1518;
+  color: #edf4f2;
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body,
+#root {
+  margin: 0;
+  min-height: 100vh;
+  background: transparent;
+}
+
+.app-loading {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+}
+
+.app-shell {
+  min-height: 100vh;
+  background: transparent;
+}
+
+.app-sider {
+  background: rgba(9, 14, 16, 0.85) !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(14px);
+}
+
+.brand-block {
+  padding: 28px 24px 18px;
+}
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: #86d2c6 !important;
+}
+
+.scene-menu {
+  background: transparent !important;
+  border-inline-end: 0 !important;
+}
+
+.scene-menu-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.main-panel,
+.content-panel {
+  background: transparent !important;
+}
+
+.app-header {
+  height: auto;
+  padding: 24px 32px 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  background: transparent !important;
+}
+
+.header-input {
+  min-width: 180px;
+}
+
+.content-panel {
+  padding: 24px 32px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.overview-grid,
+.content-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 20px;
+}
+
+.hero-card,
+.announcements-card,
+.section-card,
+.result-card,
+.mini-card {
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background: rgba(12, 19, 22, 0.72) !important;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
+}
+
+.hero-description {
+  max-width: 820px;
+  font-size: 16px;
+}
+
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.detail-list {
+  margin-top: 20px;
+}
+
+.browser-toolbar {
+  display: flex;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.browser-shell {
+  min-height: 640px;
+  overflow: hidden;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.github-webview {
+  width: 100%;
+  min-height: 640px;
+  border: 0;
+  display: block;
+}
+
+@media (max-width: 1200px) {
+  .overview-grid,
+  .content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .app-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
