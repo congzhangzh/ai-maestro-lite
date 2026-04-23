@@ -1,41 +1,54 @@
 # 飞书同步
 
-## 同步目标
+## 目标
 
-系统中的动作探针和 GitHub URL 审计需要：
+系统中的动作探针和 GitHub URL 审计，需要满足两个要求：
 
-- 先落到后端 SQLite
-- 再由服务端 worker 调用飞书开放 API
-- 最终写入飞书多维表格
+- 本地先落库，避免数据丢失
+- 再同步到飞书多维表格，方便中台查看
 
-## 数据流
+## 同步流程
+
+固定流程如下：
 
 1. 客户端上报 `probes` 或 `audits`
 2. 后端先写入 `data/app-store.sqlite`
-3. Feishu worker 按批次读取未同步记录
-4. 通过飞书 access token 调用多维表格 `batch_create`
-5. 写入成功后，把同步结果写入 `bitable_rows`
-6. 原始记录标记为已同步
+3. Feishu worker 按批读取未同步记录
+4. worker 调用飞书开放 API 写入多维表格
+5. 写入成功后，把同步结果写回 `bitable_rows`
+6. 原始记录再标记为已同步
 
-## 环境变量
+这意味着：
+
+- 飞书短时失败不会影响客户端上报
+- 数据库里始终保留原始记录
+
+## 相关环境变量
 
 参考：
 
 - [`.env.example`](../.env.example)
 
-关键变量：
+常用变量：
 
 - `FEISHU_SYNC_ENABLED=true`
 - `FEISHU_APP_ID`
 - `FEISHU_APP_SECRET`
+- `FEISHU_BASE_URL`
+- `FEISHU_TOKEN_PATH`
 - `FEISHU_BITABLE_APP_TOKEN`
-- `FEISHU_BITABLE_TABLE_ID` 或分表配置
+- `FEISHU_BITABLE_TABLE_ID`
+- `FEISHU_PROBE_TABLE_ID`
+- `FEISHU_AUDIT_TABLE_ID`
+- `FEISHU_WEBHOOK_URL`
+- `FEISHU_SYNC_INTERVAL_MS`
+- `FEISHU_SYNC_BATCH_SIZE`
 
-## 表格字段约定
+## 表格字段建议
 
-当前写入字段采用固定名称，建议在飞书多维表格中预先创建这些列。
+### 动作探针
 
-动作探针常用字段：
+建议包含这些列：
 
 - `Kind`
 - `DeviceID`
@@ -49,7 +62,9 @@
 - `OccurredAt`
 - `PayloadJSON`
 
-URL 审计常用字段：
+### URL 审计
+
+建议包含这些列：
 
 - `Kind`
 - `DeviceID`
@@ -65,20 +80,20 @@ URL 审计常用字段：
 - `OccurredAt`
 - `PayloadJSON`
 
-## 统一表与分表
+## 单表和分表
 
-支持两种模式：
+支持两种写法：
 
-- 统一表：`probe` 和 `audit` 都写进同一个 table id
-- 分表：分别写到独立 table id
+- 单表模式：`probe` 和 `audit` 都写到同一个表
+- 分表模式：`probe` 和 `audit` 分别写到不同表
 
-优先级：
+优先级如下：
 
 1. `FEISHU_PROBE_TABLE_ID` / `FEISHU_AUDIT_TABLE_ID`
 2. `FEISHU_BITABLE_TABLE_ID`
 
-## 失败行为
+## 失败处理
 
-- 飞书写入失败时，不会把原始记录标记成已同步
-- 错误会写入 `notifications`
-- 如果配置了 `FEISHU_WEBHOOK_URL`，会把失败或拦截汇总推送到飞书机器人
+- 飞书写入失败时，不会把原始记录标记为已同步
+- 失败信息会写入数据库
+- 如果配置了 `FEISHU_WEBHOOK_URL`，还会推送失败告警

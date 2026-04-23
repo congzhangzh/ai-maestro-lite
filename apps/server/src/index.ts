@@ -11,20 +11,28 @@ async function main() {
 
   const port = Number(process.env.PORT ?? 8787);
   const host = process.env.HOST ?? "127.0.0.1";
+  const server = app.listen(port, host, () => {
+    console.log(`AI Maestro server listening on http://${host}:${port}`);
+  });
 
   const close = async () => {
     if (worker) {
       clearInterval(worker);
     }
-    await app.close();
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
     process.exit(0);
   };
 
   process.on("SIGINT", close);
   process.on("SIGTERM", close);
-
-  await app.listen({ port, host });
-  app.log.info(`AI Maestro server listening on http://${host}:${port}`);
 }
 
 main().catch((error) => {
