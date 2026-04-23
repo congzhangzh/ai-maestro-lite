@@ -1,0 +1,26 @@
+directories:
+  output: release
+  buildResources: build
+appId: com.ai-maestro.lite
+productName: AI Maestro Lite
+electronVersion: 35.7.5
+asar: false
+files:
+  - filter:
+      - dist/**/*
+      - dist-electron/**/*
+      - package.json
+  - from: ../server/dist
+    to: server
+    filter:
+      - '**/*'
+extraMetadata:
+  main: dist-electron/apps/desktop/electron/main.js
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true

@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { exec as execCallback, spawn } from "node:child_process";
+import { exec as execCallback, spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { app, BrowserWindow, ipcMain, session, webContents } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, session, webContents } from "electron";
 import type {
   ActionRunRequest,
   ActionRunResult,
@@ -25,12 +25,13 @@ const exec = promisify(execCallback);
 const GITHUB_PARTITION = "persist:github-browser";
 const DEFAULT_API_BASE_URL = process.env.AI_MAESTRO_API_BASE_URL ?? "http://127.0.0.1:8787";
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
-const APP_VERSION = "0.1.4";
+const BUNDLED_SERVER_HEALTHCHECK_TIMEOUT_MS = 15_000;
 const REQUIRED_VSCODE_EXTENSIONS = ["ms-python.python", "esbenp.prettier-vscode"];
 const PROXY_MARKER_START = "# AI_MAESTRO_PROXY_START";
 const PROXY_MARKER_END = "# AI_MAESTRO_PROXY_END";
 
 let mainWindow: BrowserWindow | null = null;
+let bundledServerProcess: ChildProcess | null = null;
 let browserHooksRegistered = false;
 let cachedBrowserPolicy: BrowserPolicy = {
   proxyUrl: "http://proxy.corp.internal:7890",
@@ -39,6 +40,108 @@ let cachedBrowserPolicy: BrowserPolicy = {
 };
 let recentAudits: UrlAuditEvent[] = [];
 let auditQueue: UrlAuditEvent[] = [];
+
+function getAppVersion() {
+  return app.getVersion();
+}
+
+function getBundledServerEntryPath() {
+  return path.join(app.getAppPath(), "server", "apps", "server", "src", "index.js");
+}
+
+function getBundledServerWorkingDir() {
+  return path.join(app.getPath("userData"), "server-runtime");
+}
+
+function shouldLaunchBundledServer() {
+  if (!app.isPackaged || process.env.AI_MAESTRO_SKIP_BUNDLED_SERVER === "1") {
+    return false;
+  }
+
+  try {
+    const apiBaseUrl = new URL(DEFAULT_API_BASE_URL);
+    return apiBaseUrl.hostname === "127.0.0.1" || apiBaseUrl.hostname === "localhost";
+  } catch {
+    return false;
+  }
+}
+
+function getBundledServerAddress() {
+  const apiBaseUrl = new URL(DEFAULT_API_BASE_URL);
+  return {
+    host: apiBaseUrl.hostname,
+    port: apiBaseUrl.port || (apiBaseUrl.protocol === "https:" ? "443" : "80")
+  };
+}
+
+async function isApiReachable() {
+  try {
+    const response = await fetch(`${DEFAULT_API_BASE_URL}/health`);
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForBundledServer() {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < BUNDLED_SERVER_HEALTHCHECK_TIMEOUT_MS) {
+    if (await isApiReachable()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  throw new Error(`Bundled server did not become healthy: ${DEFAULT_API_BASE_URL}/health`);
+}
+
+async function ensureBundledServer() {
+  if (!shouldLaunchBundledServer() || bundledServerProcess) {
+    return;
+  }
+
+  if (await isApiReachable()) {
+    return;
+  }
+
+  const entryPath = getBundledServerEntryPath();
+  if (!existsSync(entryPath)) {
+    throw new Error(`Bundled server entry not found: ${entryPath}`);
+  }
+
+  const workingDir = getBundledServerWorkingDir();
+  const { host, port } = getBundledServerAddress();
+  await mkdir(workingDir, { recursive: true });
+
+  bundledServerProcess = spawn(process.execPath, [entryPath], {
+    cwd: workingDir,
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: "1",
+      HOST: host,
+      PORT: port
+    },
+    stdio: "ignore",
+    windowsHide: true
+  });
+
+  bundledServerProcess.once("error", (error) => {
+    console.error("Bundled server failed to start", error);
+  });
+  bundledServerProcess.once("exit", () => {
+    bundledServerProcess = null;
+  });
+
+  await waitForBundledServer();
+}
+
+function stopBundledServer() {
+  if (!bundledServerProcess || bundledServerProcess.killed) {
+    return;
+  }
+
+  bundledServerProcess.kill();
+  bundledServerProcess = null;
+}
 
 function getSettingsPath() {
   return path.join(app.getPath("userData"), "settings.json");
@@ -162,7 +265,7 @@ async function getDesktopContext(): Promise<DesktopContext> {
     platform: process.platform,
     arch: process.arch,
     hostname: os.hostname(),
-    appVersion: APP_VERSION
+    appVersion: getAppVersion()
   };
 }
 
@@ -452,7 +555,7 @@ async function registerBrowserHooks() {
         pushAuditEvent({
           deviceId: settings.deviceId,
           employeeId: settings.employeeId,
-          clientVersion: APP_VERSION,
+          clientVersion: getAppVersion(),
           sceneId: "github-browser",
           requestType: details.resourceType,
           method: details.method,
@@ -480,7 +583,7 @@ async function registerBrowserHooks() {
       pushAuditEvent({
         deviceId: settings.deviceId,
         employeeId: settings.employeeId,
-        clientVersion: APP_VERSION,
+        clientVersion: getAppVersion(),
         sceneId: "github-browser",
         requestType: details.resourceType,
         method: details.method,
@@ -1053,6 +1156,14 @@ function registerIpcHandlers() {
 
 app.whenReady().then(async () => {
   registerIpcHandlers();
+  try {
+    await ensureBundledServer();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown startup error";
+    dialog.showErrorBox("AI Maestro Lite 启动失败", `内置服务启动失败。\n${message}`);
+    app.quit();
+    return;
+  }
   await refreshBrowserPolicy();
   await registerBrowserHooks();
   setInterval(() => {
@@ -1060,6 +1171,10 @@ app.whenReady().then(async () => {
     void flushAuditQueue();
   }, 15_000);
   await createWindow();
+});
+
+app.on("before-quit", () => {
+  stopBundledServer();
 });
 
 app.on("window-all-closed", () => {

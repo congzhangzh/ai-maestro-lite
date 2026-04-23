@@ -9,6 +9,8 @@
   "scripts": {
     "dev": "concurrently -k \"npm run dev --workspace @ai-maestro-lite/server\" \"npm run dev --workspace @ai-maestro-lite/desktop\"",
     "build": "npm run build --workspace @ai-maestro-lite/server && npm run build --workspace @ai-maestro-lite/desktop",
+    "dist": "npm run build --workspace @ai-maestro-lite/server && npm run dist --workspace @ai-maestro-lite/desktop",
+    "dist:win": "npm run build --workspace @ai-maestro-lite/server && npm run dist:win --workspace @ai-maestro-lite/desktop",
     "start:server": "npm run start --workspace @ai-maestro-lite/server",
     "start:desktop": "npm run start --workspace @ai-maestro-lite/desktop"
   },
@@ -17,8 +19,10 @@
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.1",
     "@types/node": "^22.15.3",
+    "7zip-bin": "^5.2.0",
     "concurrently": "^9.2.0",
     "cross-env": "^7.0.3",
+    "electron-builder": "^24.13.3",
     "tsx": "^4.19.3",
     "typescript": "^5.8.3",
     "wait-on": "^8.0.3"

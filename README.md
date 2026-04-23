@@ -82,3 +82,14 @@ npm run dev
 - [docs/design-solution.md](./docs/design-solution.md)
 - [docs/runtime-config.md](./docs/runtime-config.md)
 - [docs/feishu-sync.md](./docs/feishu-sync.md)
+
+## Windows Release
+
+```bash
+npm install
+npm run dist:win
+```
+
+- Output directory: `apps/desktop/release/`
+- The packaged desktop app now bundles the local server and starts it automatically in production
+- Validate with either `apps/desktop/release/win-unpacked/AI Maestro Lite.exe` or the generated NSIS installer

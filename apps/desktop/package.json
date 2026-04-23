@@ -2,6 +2,8 @@
   "name": "@ai-maestro-lite/desktop",
   "version": "0.1.0",
   "private": true,
+  "description": "AI Maestro Lite desktop app",
+  "author": "AI Maestro Lite",
   "main": "dist-electron/apps/desktop/electron/main.js",
   "scripts": {
     "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:electron:build\" \"npm:dev:electron\"",
@@ -11,13 +13,17 @@
     "build": "npm run build:renderer && npm run build:electron",
     "build:renderer": "vite build",
     "build:electron": "tsc -p tsconfig.node.json",
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "\"%npm_node_execpath%\" ../../node_modules/electron-builder/cli.js",
+    "dist:win": "\"%npm_node_execpath%\" ../../node_modules/electron-builder/cli.js --win nsis"
   },
   "dependencies": {
     "@ai-maestro-lite/shared": "0.1.0",
     "@ant-design/icons": "^5.6.1",
     "antd": "^5.24.8",
-    "electron": "^35.2.0",
+    "better-sqlite3": "^11.10.0",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
@@ -25,6 +31,45 @@
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
     "@vitejs/plugin-react": "^4.4.1",
+    "electron": "35.7.5",
     "vite": "^6.3.5"
+  },
+  "build": {
+    "appId": "com.ai-maestro.lite",
+    "productName": "AI Maestro Lite",
+    "electronVersion": "35.7.5",
+    "asar": false,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json",
+      {
+        "from": "../server/dist",
+        "to": "server",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "extraMetadata": {
+      "main": "dist-electron/apps/desktop/electron/main.js"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }
