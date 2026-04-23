@@ -17,7 +17,16 @@ export interface AppStore {
   appendAudits(events: UrlAuditEvent[]): Promise<number>;
   getUnsynced(limit: number): Promise<{ probes: Array<StoredRecord<ProbeActionEvent>>; audits: Array<StoredRecord<UrlAuditEvent>> }>;
   markSynced(kind: "probe" | "audit", ids: string[]): Promise<void>;
-  appendBitableRows(rows: Array<{ kind: "probe" | "audit"; payload: unknown }>): Promise<void>;
+  appendBitableRows(
+    rows: Array<{
+      kind: "probe" | "audit";
+      sourceId: string;
+      tableId: string;
+      payload: unknown;
+      externalRecordId?: string;
+      syncedAt: string;
+    }>
+  ): Promise<void>;
   appendNotification(level: "info" | "warning" | "error", title: string, body: string): Promise<void>;
 }
 
@@ -60,7 +69,12 @@ class SqliteStore implements AppStore {
       create table if not exists bitable_rows (
         id text primary key,
         kind text not null,
+        source_id text,
+        table_id text,
         payload text not null,
+        external_record_id text,
+        status text,
+        error_message text,
         synced_at text not null
       );
 
@@ -72,6 +86,11 @@ class SqliteStore implements AppStore {
         created_at text not null
       );
     `);
+    this.ensureColumn("bitable_rows", "source_id", "text");
+    this.ensureColumn("bitable_rows", "table_id", "text");
+    this.ensureColumn("bitable_rows", "external_record_id", "text");
+    this.ensureColumn("bitable_rows", "status", "text");
+    this.ensureColumn("bitable_rows", "error_message", "text");
   }
 
   async registerDevice(payload: DeviceRegistrationRequest): Promise<void> {
@@ -173,24 +192,47 @@ class SqliteStore implements AppStore {
     this.db.prepare(`update ${table} set synced = 1 where id in (${placeholders})`).run(...ids);
   }
 
-  async appendBitableRows(rows: Array<{ kind: "probe" | "audit"; payload: unknown }>): Promise<void> {
-    const syncedAt = new Date().toISOString();
+  async appendBitableRows(
+    rows: Array<{
+      kind: "probe" | "audit";
+      sourceId: string;
+      tableId: string;
+      payload: unknown;
+      externalRecordId?: string;
+      syncedAt: string;
+    }>
+  ): Promise<void> {
     const statement = this.db.prepare(
       `
-        insert into bitable_rows (id, kind, payload, synced_at)
-        values (@id, @kind, @payload, @synced_at)
+        insert into bitable_rows (id, kind, source_id, table_id, payload, external_record_id, status, synced_at)
+        values (@id, @kind, @source_id, @table_id, @payload, @external_record_id, @status, @synced_at)
       `
     );
-    const insertMany = this.db.transaction((items: Array<{ kind: "probe" | "audit"; payload: unknown }>) => {
+    const insertMany = this.db.transaction(
+      (
+        items: Array<{
+          kind: "probe" | "audit";
+          sourceId: string;
+          tableId: string;
+          payload: unknown;
+          externalRecordId?: string;
+          syncedAt: string;
+        }>
+      ) => {
       for (const item of items) {
         statement.run({
           id: randomUUID(),
           kind: item.kind,
+          source_id: item.sourceId,
+          table_id: item.tableId,
           payload: JSON.stringify(item.payload),
-          synced_at: syncedAt
+          external_record_id: item.externalRecordId ?? null,
+          status: "synced",
+          synced_at: item.syncedAt
         });
       }
-    });
+      }
+    );
     insertMany(rows);
   }
 
@@ -219,6 +261,17 @@ class SqliteStore implements AppStore {
       synced: false,
       createdAt: typedRow.created_at
     };
+  }
+
+  private ensureColumn(table: string, column: string, definition: string) {
+    const columns = this.db
+      .prepare(`pragma table_info(${table})`)
+      .all()
+      .map((row) => (row as { name: string }).name);
+
+    if (!columns.includes(column)) {
+      this.db.exec(`alter table ${table} add column ${column} ${definition}`);
+    }
   }
 }
 

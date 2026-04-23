@@ -13,7 +13,9 @@ async function main() {
   const host = process.env.HOST ?? "127.0.0.1";
 
   const close = async () => {
-    clearInterval(worker);
+    if (worker) {
+      clearInterval(worker);
+    }
     await app.close();
     process.exit(0);
   };

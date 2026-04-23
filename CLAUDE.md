@@ -44,6 +44,21 @@ Example config lives at:
 
 - `apps/server/config/runtime-config.example.json`
 
+Feishu sync configuration is controlled by environment variables:
+
+- `FEISHU_SYNC_ENABLED`
+- `FEISHU_BASE_URL`
+- `FEISHU_TOKEN_PATH`
+- `FEISHU_APP_ID`
+- `FEISHU_APP_SECRET`
+- `FEISHU_BITABLE_APP_TOKEN`
+- `FEISHU_BITABLE_TABLE_ID`
+- `FEISHU_PROBE_TABLE_ID`
+- `FEISHU_AUDIT_TABLE_ID`
+- `FEISHU_WEBHOOK_URL`
+- `FEISHU_SYNC_INTERVAL_MS`
+- `FEISHU_SYNC_BATCH_SIZE`
+
 ## Important paths
 
 - Desktop shell: `apps/desktop`

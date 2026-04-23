@@ -29,11 +29,13 @@ npm run build
 - No PostgreSQL is required.
 - Update metadata and package download links support both built-in defaults and file-based overrides.
 - Runtime config can be supplied through `data/runtime-config.json` or `AI_MAESTRO_RUNTIME_CONFIG`.
-- Feishu sync is modeled as an async worker that mirrors full probe and URL audit data into SQLite sync tables and optionally posts webhook notifications when credentials are configured.
+- Feishu sync is an async worker that first stores source events in SQLite, then writes them to Feishu Bitable through the Feishu API when environment variables are configured.
+- Feishu-related settings are controlled through environment variables. See `.env.example`.
 
 ## Documentation
 
 - [CLAUDE.md](./CLAUDE.md)
 - [docs/product-background.md](./docs/product-background.md)
 - [docs/design-solution.md](./docs/design-solution.md)
+- [docs/feishu-sync.md](./docs/feishu-sync.md)
 - [docs/runtime-config.md](./docs/runtime-config.md)

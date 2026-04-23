@@ -58,3 +58,29 @@
 - 未配置的字段继续使用默认值
 - 已配置的字段覆盖默认值
 - `releaseNotes` 按整段数组覆盖，不做逐条合并
+
+## 飞书环境变量
+
+飞书同步不走 `runtime-config.json`，而是通过环境变量控制。
+
+主要变量包括：
+
+- `FEISHU_SYNC_ENABLED`
+- `FEISHU_BASE_URL`
+- `FEISHU_TOKEN_PATH`
+- `FEISHU_APP_ID`
+- `FEISHU_APP_SECRET`
+- `FEISHU_BITABLE_APP_TOKEN`
+- `FEISHU_BITABLE_TABLE_ID`
+- `FEISHU_PROBE_TABLE_ID`
+- `FEISHU_AUDIT_TABLE_ID`
+- `FEISHU_WEBHOOK_URL`
+- `FEISHU_SYNC_INTERVAL_MS`
+- `FEISHU_SYNC_BATCH_SIZE`
+
+推荐做法：
+
+- 一个统一表：只设置 `FEISHU_BITABLE_TABLE_ID`
+- 分表写入：设置 `FEISHU_PROBE_TABLE_ID` 和 `FEISHU_AUDIT_TABLE_ID`
+
+如果统一表和分表都没配，飞书 worker 不会启动。
