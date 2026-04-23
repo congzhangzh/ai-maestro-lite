@@ -11,7 +11,7 @@ An Electron + React desktop assistant and Fastify backend for five fixed enterpr
 ## Workspace layout
 
 - `apps/desktop`: Electron desktop app with React and Ant Design UI
-- `apps/server`: Fastify API server with optional PostgreSQL persistence
+- `apps/server`: Fastify API server with SQLite persistence
 - `packages/shared`: shared types and default scene metadata
 
 ## Scripts
@@ -24,6 +24,6 @@ npm run build
 
 ## Runtime notes
 
-- The server uses PostgreSQL when `DATABASE_URL` is set.
-- Without `DATABASE_URL`, the server falls back to JSON files under `apps/server/data`.
-- Feishu sync is modeled as an async worker that mirrors full probe and URL audit data into local sync files and optionally posts webhook notifications when credentials are configured.
+- The backend stays on Node.js and persists data into SQLite at `data/app-store.sqlite`.
+- No PostgreSQL is required.
+- Feishu sync is modeled as an async worker that mirrors full probe and URL audit data into SQLite sync tables and optionally posts webhook notifications when credentials are configured.

@@ -1,28 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
+import Database from "better-sqlite3";
 import type { DeviceRegistrationRequest, ProbeActionEvent, UrlAuditEvent } from "@ai-maestro-lite/shared";
-import { Pool } from "pg";
 
 type StoredRecord<T> = T & {
   id: string;
   synced: boolean;
   createdAt: string;
 };
-
-type DbRow<T> = {
-  id: string;
-  payload: T;
-  created_at: Date;
-};
-
-interface FileState {
-  devices: Array<DeviceRegistrationRequest & { createdAt: string }>;
-  probes: Array<StoredRecord<ProbeActionEvent>>;
-  audits: Array<StoredRecord<UrlAuditEvent>>;
-  bitableRows: Array<{ id: string; kind: "probe" | "audit"; payload: unknown; syncedAt: string }>;
-  notifications: Array<{ id: string; level: "info" | "warning" | "error"; title: string; body: string; createdAt: string }>;
-}
 
 export interface AppStore {
   init(): Promise<void>;
@@ -35,216 +21,146 @@ export interface AppStore {
   appendNotification(level: "info" | "warning" | "error", title: string, body: string): Promise<void>;
 }
 
-class FileStore implements AppStore {
-  private readonly filePath = path.join(process.cwd(), "data", "app-store.json");
+type StoredSyncRow = {
+  id: string;
+  payload: string;
+  created_at: string;
+};
+
+class SqliteStore implements AppStore {
+  private readonly dataDir = path.resolve(process.cwd(), "data");
+  private readonly filePath = path.join(this.dataDir, "app-store.sqlite");
+  private db!: Database.Database;
 
   async init(): Promise<void> {
-    await mkdir(path.dirname(this.filePath), { recursive: true });
-    try {
-      await readFile(this.filePath, "utf8");
-    } catch {
-      await this.writeState({
-        devices: [],
-        probes: [],
-        audits: [],
-        bitableRows: [],
-        notifications: []
-      });
-    }
-  }
-
-  async registerDevice(payload: DeviceRegistrationRequest): Promise<void> {
-    const state = await this.readState();
-    state.devices = state.devices.filter((device) => device.deviceId !== payload.deviceId);
-    state.devices.push({ ...payload, createdAt: new Date().toISOString() });
-    await this.writeState(state);
-  }
-
-  async appendProbes(events: ProbeActionEvent[]): Promise<number> {
-    const state = await this.readState();
-    const now = new Date().toISOString();
-    const stored = events.map((event) => ({
-      ...event,
-      id: randomUUID(),
-      synced: false,
-      createdAt: now
-    }));
-    state.probes.push(...stored);
-    await this.writeState(state);
-    return stored.length;
-  }
-
-  async appendAudits(events: UrlAuditEvent[]): Promise<number> {
-    const state = await this.readState();
-    const now = new Date().toISOString();
-    const stored = events.map((event) => ({
-      ...event,
-      id: randomUUID(),
-      synced: false,
-      createdAt: now
-    }));
-    state.audits.push(...stored);
-    await this.writeState(state);
-    return stored.length;
-  }
-
-  async getUnsynced(limit: number): Promise<{ probes: Array<StoredRecord<ProbeActionEvent>>; audits: Array<StoredRecord<UrlAuditEvent>> }> {
-    const state = await this.readState();
-    return {
-      probes: state.probes.filter((item) => !item.synced).slice(0, limit),
-      audits: state.audits.filter((item) => !item.synced).slice(0, limit)
-    };
-  }
-
-  async markSynced(kind: "probe" | "audit", ids: string[]): Promise<void> {
-    const state = await this.readState();
-    const items = kind === "probe" ? state.probes : state.audits;
-    for (const item of items) {
-      if (ids.includes(item.id)) {
-        item.synced = true;
-      }
-    }
-    await this.writeState(state);
-  }
-
-  async appendBitableRows(rows: Array<{ kind: "probe" | "audit"; payload: unknown }>): Promise<void> {
-    const state = await this.readState();
-    const syncedAt = new Date().toISOString();
-    state.bitableRows.push(
-      ...rows.map((row) => ({
-        id: randomUUID(),
-        kind: row.kind,
-        payload: row.payload,
-        syncedAt
-      }))
-    );
-    await this.writeState(state);
-  }
-
-  async appendNotification(level: "info" | "warning" | "error", title: string, body: string): Promise<void> {
-    const state = await this.readState();
-    state.notifications.push({
-      id: randomUUID(),
-      level,
-      title,
-      body,
-      createdAt: new Date().toISOString()
-    });
-    await this.writeState(state);
-  }
-
-  private async readState(): Promise<FileState> {
-    return JSON.parse(await readFile(this.filePath, "utf8")) as FileState;
-  }
-
-  private async writeState(state: FileState): Promise<void> {
-    await writeFile(this.filePath, JSON.stringify(state, null, 2), "utf8");
-  }
-}
-
-class PostgresStore implements AppStore {
-  private readonly pool: Pool;
-
-  constructor(connectionString: string) {
-    this.pool = new Pool({ connectionString });
-  }
-
-  async init(): Promise<void> {
-    await this.pool.query(`
+    await mkdir(this.dataDir, { recursive: true });
+    this.db = new Database(this.filePath);
+    this.db.pragma("journal_mode = WAL");
+    this.db.exec(`
       create table if not exists devices (
         device_id text primary key,
-        payload jsonb not null,
-        created_at timestamptz not null default now()
+        payload text not null,
+        created_at text not null
       );
 
       create table if not exists probes (
-        id uuid primary key,
-        payload jsonb not null,
-        synced boolean not null default false,
-        created_at timestamptz not null default now()
+        id text primary key,
+        payload text not null,
+        synced integer not null default 0,
+        created_at text not null
       );
 
       create table if not exists audits (
-        id uuid primary key,
-        payload jsonb not null,
-        synced boolean not null default false,
-        created_at timestamptz not null default now()
+        id text primary key,
+        payload text not null,
+        synced integer not null default 0,
+        created_at text not null
       );
 
       create table if not exists bitable_rows (
-        id uuid primary key,
+        id text primary key,
         kind text not null,
-        payload jsonb not null,
-        synced_at timestamptz not null default now()
+        payload text not null,
+        synced_at text not null
       );
 
       create table if not exists notifications (
-        id uuid primary key,
+        id text primary key,
         level text not null,
         title text not null,
         body text not null,
-        created_at timestamptz not null default now()
+        created_at text not null
       );
     `);
   }
 
   async registerDevice(payload: DeviceRegistrationRequest): Promise<void> {
-    await this.pool.query(
-      `
-        insert into devices (device_id, payload)
-        values ($1, $2::jsonb)
-        on conflict (device_id)
-        do update set payload = excluded.payload, created_at = now()
-      `,
-      [payload.deviceId, JSON.stringify(payload)]
-    );
+    const createdAt = new Date().toISOString();
+    this.db
+      .prepare(
+        `
+          insert into devices (device_id, payload, created_at)
+          values (@device_id, @payload, @created_at)
+          on conflict(device_id) do update set
+            payload = excluded.payload,
+            created_at = excluded.created_at
+        `
+      )
+      .run({
+        device_id: payload.deviceId,
+        payload: JSON.stringify(payload),
+        created_at: createdAt
+      });
   }
 
   async appendProbes(events: ProbeActionEvent[]): Promise<number> {
-    for (const event of events) {
-      await this.pool.query(
-        `insert into probes (id, payload) values ($1, $2::jsonb)`,
-        [randomUUID(), JSON.stringify(event)]
-      );
-    }
+    const now = new Date().toISOString();
+    const statement = this.db.prepare(
+      `
+        insert into probes (id, payload, synced, created_at)
+        values (@id, @payload, 0, @created_at)
+      `
+    );
+    const insertMany = this.db.transaction((items: ProbeActionEvent[]) => {
+      for (const item of items) {
+        statement.run({
+          id: randomUUID(),
+          payload: JSON.stringify(item),
+          created_at: now
+        });
+      }
+    });
+    insertMany(events);
     return events.length;
   }
 
   async appendAudits(events: UrlAuditEvent[]): Promise<number> {
-    for (const event of events) {
-      await this.pool.query(
-        `insert into audits (id, payload) values ($1, $2::jsonb)`,
-        [randomUUID(), JSON.stringify(event)]
-      );
-    }
+    const now = new Date().toISOString();
+    const statement = this.db.prepare(
+      `
+        insert into audits (id, payload, synced, created_at)
+        values (@id, @payload, 0, @created_at)
+      `
+    );
+    const insertMany = this.db.transaction((items: UrlAuditEvent[]) => {
+      for (const item of items) {
+        statement.run({
+          id: randomUUID(),
+          payload: JSON.stringify(item),
+          created_at: now
+        });
+      }
+    });
+    insertMany(events);
     return events.length;
   }
 
   async getUnsynced(limit: number): Promise<{ probes: Array<StoredRecord<ProbeActionEvent>>; audits: Array<StoredRecord<UrlAuditEvent>> }> {
-    const [probeRows, auditRows] = await Promise.all([
-      this.pool.query<DbRow<ProbeActionEvent>>(
-        `select id, payload, created_at from probes where synced = false order by created_at asc limit $1`,
-        [limit]
-      ),
-      this.pool.query<DbRow<UrlAuditEvent>>(
-        `select id, payload, created_at from audits where synced = false order by created_at asc limit $1`,
-        [limit]
-      )
-    ]);
-
     return {
-      probes: probeRows.rows.map((row) => ({
-        ...(row.payload as ProbeActionEvent),
-        id: row.id,
-        createdAt: row.created_at.toISOString(),
-        synced: false
-      })),
-      audits: auditRows.rows.map((row) => ({
-        ...(row.payload as UrlAuditEvent),
-        id: row.id,
-        createdAt: row.created_at.toISOString(),
-        synced: false
-      }))
+      probes: this.db
+        .prepare(
+          `
+            select id, payload, created_at
+            from probes
+            where synced = 0
+            order by created_at asc
+            limit ?
+          `
+        )
+        .all(limit)
+        .map((row) => this.deserializeRow<ProbeActionEvent>(row)),
+      audits: this.db
+        .prepare(
+          `
+            select id, payload, created_at
+            from audits
+            where synced = 0
+            order by created_at asc
+            limit ?
+          `
+        )
+        .all(limit)
+        .map((row) => this.deserializeRow<UrlAuditEvent>(row))
     };
   }
 
@@ -253,29 +169,59 @@ class PostgresStore implements AppStore {
       return;
     }
     const table = kind === "probe" ? "probes" : "audits";
-    await this.pool.query(`update ${table} set synced = true where id = any($1::uuid[])`, [ids]);
+    const placeholders = ids.map(() => "?").join(", ");
+    this.db.prepare(`update ${table} set synced = 1 where id in (${placeholders})`).run(...ids);
   }
 
   async appendBitableRows(rows: Array<{ kind: "probe" | "audit"; payload: unknown }>): Promise<void> {
-    for (const row of rows) {
-      await this.pool.query(
-        `insert into bitable_rows (id, kind, payload) values ($1, $2, $3::jsonb)`,
-        [randomUUID(), row.kind, JSON.stringify(row.payload)]
-      );
-    }
+    const syncedAt = new Date().toISOString();
+    const statement = this.db.prepare(
+      `
+        insert into bitable_rows (id, kind, payload, synced_at)
+        values (@id, @kind, @payload, @synced_at)
+      `
+    );
+    const insertMany = this.db.transaction((items: Array<{ kind: "probe" | "audit"; payload: unknown }>) => {
+      for (const item of items) {
+        statement.run({
+          id: randomUUID(),
+          kind: item.kind,
+          payload: JSON.stringify(item.payload),
+          synced_at: syncedAt
+        });
+      }
+    });
+    insertMany(rows);
   }
 
   async appendNotification(level: "info" | "warning" | "error", title: string, body: string): Promise<void> {
-    await this.pool.query(
-      `insert into notifications (id, level, title, body) values ($1, $2, $3, $4)`,
-      [randomUUID(), level, title, body]
-    );
+    this.db
+      .prepare(
+        `
+          insert into notifications (id, level, title, body, created_at)
+          values (@id, @level, @title, @body, @created_at)
+        `
+      )
+      .run({
+        id: randomUUID(),
+        level,
+        title,
+        body,
+        created_at: new Date().toISOString()
+      });
+  }
+
+  private deserializeRow<T>(row: unknown): StoredRecord<T> {
+    const typedRow = row as StoredSyncRow;
+    return {
+      ...(JSON.parse(typedRow.payload) as T),
+      id: typedRow.id,
+      synced: false,
+      createdAt: typedRow.created_at
+    };
   }
 }
 
 export function createStore(): AppStore {
-  if (process.env.DATABASE_URL) {
-    return new PostgresStore(process.env.DATABASE_URL);
-  }
-  return new FileStore();
+  return new SqliteStore();
 }
